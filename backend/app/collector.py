@@ -83,83 +83,89 @@ class Collector:
         self._prev_proc_stat: dict[str, int] | None = None
 
     async def _sample_container(self, summary: dict, interval_sec: float, now: datetime) -> ContainerMetrics | None:
-        container_id = summary["Id"][:12]
-        full_id = summary["Id"]
-        name = summary.get("Names", ["/" + full_id[:12]])[0].lstrip("/")
-        image = summary.get("Image", "")
-
         try:
-            info = await self._docker.inspect(full_id)
-        except Exception:
-            logger.warning("inspect failed for %s", container_id, exc_info=True)
-            return None
+            container_id = summary["Id"][:12]
+            full_id = summary["Id"]
+            name = summary.get("Names", ["/" + full_id[:12]])[0].lstrip("/")
+            image = summary.get("Image", "")
 
-        state = info["State"]["Status"]
-        restarts = info.get("RestartCount", 0)
-        exit_code = info["State"].get("ExitCode", 0)
+            try:
+                info = await self._docker.inspect(full_id)
+            except Exception:
+                logger.warning("inspect failed for %s", container_id, exc_info=True)
+                return None
 
-        started_at = _parse_docker_ts(info["State"].get("StartedAt", ""))
-        finished_at = _parse_docker_ts(info["State"].get("FinishedAt", ""))
-        uptime_sec = int((now - started_at).total_seconds()) if state == "running" and started_at else 0
-        exited_ago_sec = int((now - finished_at).total_seconds()) if state != "running" and finished_at else 0
+            state = info["State"]["Status"]
+            restarts = info.get("RestartCount", 0)
+            exit_code = info["State"].get("ExitCode", 0)
 
-        if state != "running":
+            started_at = _parse_docker_ts(info["State"].get("StartedAt", ""))
+            finished_at = _parse_docker_ts(info["State"].get("FinishedAt", ""))
+            uptime_sec = int((now - started_at).total_seconds()) if state == "running" and started_at else 0
+            exited_ago_sec = int((now - finished_at).total_seconds()) if state != "running" and finished_at else 0
+
+            if state != "running":
+                return ContainerMetrics(
+                    id=container_id,
+                    name=name,
+                    image=image,
+                    state=state,
+                    exit_code=exit_code,
+                    uptime_sec=0,
+                    exited_ago_sec=max(0, exited_ago_sec),
+                    restarts=restarts,
+                    pids=0,
+                    cpu_pct=0.0,
+                    mem_used_mb=0.0,
+                    mem_limit_mb=0.0,
+                    net_rx_kbps=0.0,
+                    net_tx_kbps=0.0,
+                    block_kbps=0.0,
+                )
+
+            try:
+                stats = await asyncio.wait_for(self._docker.stats(full_id), timeout=2.0)
+            except (asyncio.TimeoutError, Exception):
+                logger.warning("stats timed out/failed for %s", container_id, exc_info=True)
+                return None
+
+            cpu_pct = container_cpu_pct(stats)
+            mem_used_mb, mem_limit_mb = container_memory_mb(stats)
+
+            prev_rx, prev_tx = self._prev_net.get(container_id, (0.0, 0.0))
+            net_rx_kbps, net_tx_kbps, rx_bytes, tx_bytes = container_network_kbps(
+                stats, prev_rx, prev_tx, interval_sec
+            )
+            self._prev_net[container_id] = (rx_bytes, tx_bytes)
+
+            prev_block = self._prev_block.get(container_id, 0.0)
+            block_kbps, block_total = container_block_kbps(stats, prev_block, interval_sec)
+            self._prev_block[container_id] = block_total
+
+            pids = stats.get("pids_stats", {}).get("current", 0)
+
             return ContainerMetrics(
                 id=container_id,
                 name=name,
                 image=image,
                 state=state,
                 exit_code=exit_code,
-                uptime_sec=0,
-                exited_ago_sec=max(0, exited_ago_sec),
+                uptime_sec=max(0, uptime_sec),
+                exited_ago_sec=0,
                 restarts=restarts,
-                pids=0,
-                cpu_pct=0.0,
-                mem_used_mb=0.0,
-                mem_limit_mb=0.0,
-                net_rx_kbps=0.0,
-                net_tx_kbps=0.0,
-                block_kbps=0.0,
+                pids=pids,
+                cpu_pct=round(cpu_pct, 2),
+                mem_used_mb=round(mem_used_mb, 2),
+                mem_limit_mb=round(mem_limit_mb, 2),
+                net_rx_kbps=round(net_rx_kbps, 2),
+                net_tx_kbps=round(net_tx_kbps, 2),
+                block_kbps=round(block_kbps, 2),
             )
-
-        try:
-            stats = await asyncio.wait_for(self._docker.stats(full_id), timeout=2.0)
-        except (asyncio.TimeoutError, Exception):
-            logger.warning("stats timed out/failed for %s", container_id, exc_info=True)
+        except Exception:
+            logger.warning(
+                "unexpected error sampling container %s", summary.get("Id", "?"), exc_info=True
+            )
             return None
-
-        cpu_pct = container_cpu_pct(stats)
-        mem_used_mb, mem_limit_mb = container_memory_mb(stats)
-
-        prev_rx, prev_tx = self._prev_net.get(container_id, (0.0, 0.0))
-        net_rx_kbps, net_tx_kbps, rx_bytes, tx_bytes = container_network_kbps(
-            stats, prev_rx, prev_tx, interval_sec
-        )
-        self._prev_net[container_id] = (rx_bytes, tx_bytes)
-
-        prev_block = self._prev_block.get(container_id, 0.0)
-        block_kbps, block_total = container_block_kbps(stats, prev_block, interval_sec)
-        self._prev_block[container_id] = block_total
-
-        pids = stats.get("pids_stats", {}).get("current", 0)
-
-        return ContainerMetrics(
-            id=container_id,
-            name=name,
-            image=image,
-            state=state,
-            exit_code=exit_code,
-            uptime_sec=max(0, uptime_sec),
-            exited_ago_sec=0,
-            restarts=restarts,
-            pids=pids,
-            cpu_pct=round(cpu_pct, 2),
-            mem_used_mb=round(mem_used_mb, 2),
-            mem_limit_mb=round(mem_limit_mb, 2),
-            net_rx_kbps=round(net_rx_kbps, 2),
-            net_tx_kbps=round(net_tx_kbps, 2),
-            block_kbps=round(block_kbps, 2),
-        )
 
     async def _host_metrics(self, engine_version: str, cores: int) -> HostMetrics:
         cpu_pct = 0.0

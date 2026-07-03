@@ -137,6 +137,20 @@ async def test_tick_marks_stopped_container_with_exit_info(settings):
     assert container.pids == 0
 
 
+async def test_tick_skips_container_with_empty_names(settings):
+    docker = FakeDockerClient()
+    docker.containers = [
+        {"Id": "abc123456789", "Names": [], "Image": "nginx:latest", "State": "running"},
+    ]
+    cache = SnapshotCache()
+    collector = Collector(docker=docker, settings=settings, cache=cache, event_ring=EventRing())
+
+    snapshot = await collector.tick(now=datetime(2026, 7, 2, 18, 0, 0, tzinfo=timezone.utc))
+
+    assert isinstance(snapshot, Snapshot)
+    assert snapshot.containers == []
+
+
 def test_snapshot_cache_seeds_empty_but_valid_snapshot():
     cache = SnapshotCache()
     snapshot = cache.get()
