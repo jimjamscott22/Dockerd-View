@@ -4,7 +4,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.collector import Collector, SnapshotCache
@@ -16,38 +16,43 @@ from app.models import HostMetrics, Snapshot
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-docker_client = DockerClient(sock_path=settings.docker_sock)
-event_ring = EventRing()
-snapshot_cache = SnapshotCache()
-collector = Collector(docker=docker_client, settings=settings, cache=snapshot_cache, event_ring=event_ring)
-
-_ws_clients: set[WebSocket] = set()
 
 
-async def _broadcast_loop() -> None:
+async def _broadcast_loop(app: FastAPI) -> None:
     interval_sec = settings.sample_interval_sec
     last_ts = None
     while True:
-        snapshot = snapshot_cache.get()
+        snapshot = app.state.snapshot_cache.get()
         if snapshot.ts != last_ts:
             last_ts = snapshot.ts
             dead: list[WebSocket] = []
-            for ws in list(_ws_clients):
+            for ws in list(app.state.ws_clients):
                 try:
                     await ws.send_json(snapshot.model_dump())
                 except Exception:
                     dead.append(ws)
             for ws in dead:
-                _ws_clients.discard(ws)
+                app.state.ws_clients.discard(ws)
         await asyncio.sleep(interval_sec / 2)
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(app: FastAPI):
+    docker_client = DockerClient(sock_path=settings.docker_sock)
+    event_ring = EventRing()
+    snapshot_cache = SnapshotCache()
+    collector = Collector(docker=docker_client, settings=settings, cache=snapshot_cache, event_ring=event_ring)
+
+    app.state.docker_client = docker_client
+    app.state.event_ring = event_ring
+    app.state.snapshot_cache = snapshot_cache
+    app.state.collector = collector
+    app.state.ws_clients = set()
+
     tasks = [
         asyncio.create_task(collector.run_forever()),
         asyncio.create_task(collector.run_events_forever()),
-        asyncio.create_task(_broadcast_loop()),
+        asyncio.create_task(_broadcast_loop(app)),
     ]
     try:
         yield
@@ -68,35 +73,36 @@ app.add_middleware(
 
 
 @app.get("/api/snapshot", response_model=Snapshot)
-async def get_snapshot() -> Snapshot:
-    return snapshot_cache.get()
+async def get_snapshot(request: Request) -> Snapshot:
+    return request.app.state.snapshot_cache.get()
 
 
 @app.get("/api/containers")
-async def get_containers() -> list:
-    return snapshot_cache.get().containers
+async def get_containers(request: Request) -> list:
+    return request.app.state.snapshot_cache.get().containers
 
 
 @app.get("/api/host", response_model=HostMetrics)
-async def get_host() -> HostMetrics:
-    return snapshot_cache.get().host
+async def get_host(request: Request) -> HostMetrics:
+    return request.app.state.snapshot_cache.get().host
 
 
 @app.get("/api/health")
-async def health() -> dict:
-    docker_ok = await docker_client.ping()
+async def health(request: Request) -> dict:
+    docker_ok = await request.app.state.docker_client.ping()
     return {"ok": True, "docker": docker_ok}
 
 
 @app.websocket("/ws/snapshot")
 async def ws_snapshot(websocket: WebSocket) -> None:
     await websocket.accept()
-    _ws_clients.add(websocket)
+    ws_clients = websocket.app.state.ws_clients
+    ws_clients.add(websocket)
     try:
-        await websocket.send_json(snapshot_cache.get().model_dump())
+        await websocket.send_json(websocket.app.state.snapshot_cache.get().model_dump())
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
-        _ws_clients.discard(websocket)
+        ws_clients.discard(websocket)
