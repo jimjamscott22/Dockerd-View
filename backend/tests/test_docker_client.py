@@ -105,3 +105,14 @@ async def test_events_yields_parsed_json_lines():
         {"Type": "container", "Action": "start"},
         {"Type": "container", "Action": "die"},
     ]
+
+
+async def test_events_non_2xx_response_raises_docker_unavailable_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/events"
+        return httpx.Response(500, text="boom")
+
+    client = make_client(handler)
+    with pytest.raises(DockerUnavailableError):
+        async for _ in client.events():
+            pass

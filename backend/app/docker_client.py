@@ -1,4 +1,5 @@
 """Thin async wrapper over the Docker Engine API, reached over a Unix socket."""
+import json
 from typing import AsyncIterator
 
 import httpx
@@ -54,18 +55,16 @@ class DockerClient:
 
     async def events(self) -> AsyncIterator[dict]:
         try:
-            response = await self._client.get("/events", timeout=None)
+            async with self._client.stream("GET", "/events", timeout=None) as response:
+                if response.status_code >= 400:
+                    raise DockerUnavailableError(f"/events returned HTTP {response.status_code}")
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    yield json.loads(line)
         except httpx.HTTPError as exc:
             raise DockerUnavailableError(str(exc)) from exc
-        if response.status_code >= 400:
-            raise DockerUnavailableError(f"/events returned HTTP {response.status_code}")
-        for line in response.text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            import json
-
-            yield json.loads(line)
 
     async def aclose(self) -> None:
         await self._client.aclose()
