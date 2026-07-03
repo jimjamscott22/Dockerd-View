@@ -47,9 +47,8 @@ A **FastAPI** backend queries the local Docker daemon and serves live metrics to
 
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv sync
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 The service reads from:
@@ -83,7 +82,7 @@ The Docker socket is mounted read-only:
 Open the following file in a browser:
 
 ```text
-Docker Dashboard.dc.html
+Docker-Dashboard.html
 ```
 
 Alternatively, serve the folder statically.
@@ -139,7 +138,7 @@ Memory is reported in MiB.
 
 Network and block I/O rates are reported in kB/s.
 
-See `BACKEND_PROMPT.md` for the full schema and metric formulas.
+See `BACKEND_PROMPT-dockerd.md` for the full schema and metric formulas.
 
 ---
 
@@ -163,7 +162,7 @@ Metric calculations include:
 * **Block I/O throughput**
   Computed from byte deltas over the sampling interval.
 
-More details are available in `BACKEND_PROMPT.md`.
+More details are available in `BACKEND_PROMPT-dockerd.md`.
 
 ---
 
@@ -171,9 +170,14 @@ More details are available in `BACKEND_PROMPT.md`.
 
 ```text
 .
-├── Docker Dashboard.dc.html   # Dashboard UI
-├── BACKEND_PROMPT.md          # Full backend spec and build instructions
-├── backend/                   # FastAPI service
+├── Docker-Dashboard.html          # Dashboard UI
+├── BACKEND_PROMPT-dockerd.md      # Full backend spec and build instructions
+├── backend/                       # FastAPI service (uv-managed)
+│   ├── app/
+│   ├── tests/
+│   ├── pyproject.toml
+│   └── Dockerfile
+├── docs/superpowers/               # Specs and implementation plans
 └── docker-compose.yml
 ```
 
