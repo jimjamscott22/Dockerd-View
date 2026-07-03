@@ -184,6 +184,23 @@ More details are available in `BACKEND_PROMPT-dockerd.md`.
 
 ---
 
+## Known Issues
+
+Pre-existing bugs in `Docker-Dashboard.html`, unrelated to the live backend wiring (not yet fixed):
+
+* **`componentDidUpdate` prevProps typo** — reads `prev.props.tickMs` instead of `prev.tickMs` (the parameter itself is `prevProps`, not an object with a nested `.props`). Throws `TypeError: Cannot read properties of undefined (reading 'tickMs')` on every re-render (harmless to functionality, but spams the console).
+* **`spark()` divide-by-zero** — sparkline geometry divides by `arr.length-1`, which is `0` (→ `NaN`) when a container's history array has exactly one point. Happens briefly for newly-seen containers on their first tick; self-heals by the second tick.
+
+To fix: the file is a self-extracting "bundler" artifact — the real app code (`class Component extends DCLogic`) is JSON-encoded inside a `<script type="__bundler/template">` tag, in a nested `<script type="text/x-dc">` block (not visible to plain grep/line-based tools since the whole template is one JSON string on a single line). To edit it:
+
+1. Read the raw HTML file and locate the `<script type="__bundler/template">` tag's text content.
+2. `JSON.parse()` (or equivalent) that text to unescape it into the real page HTML.
+3. Find the `<script type="text/x-dc" data-dc-script ...>` block inside the decoded HTML — that's the actual JS to edit.
+4. Make the fix there, then `JSON.stringify()` the modified HTML back into the `__bundler/template` tag's body, leaving everything else in the file (manifest scripts, surrounding markup) byte-identical.
+5. Verify with `node --check` on the extracted script, and a live browser check afterward.
+
+---
+
 ## License
 
 MIT
