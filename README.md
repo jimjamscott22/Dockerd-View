@@ -104,8 +104,9 @@ The backend can be configured with environment variables.
 | `DOCKER_SOCK`        | Docker socket path                  | `/var/run/docker.sock` |
 | `SAMPLE_INTERVAL_MS` | Collector sampling interval         | `1500`                 |
 | `HOSTNAME_LABEL`     | Label shown in the dashboard header | Machine hostname       |
-| `ALLOWED_ORIGINS`    | Comma-separated CORS origins        | Not set                |
+| `ALLOWED_ORIGINS`    | Comma-separated CORS origins        | `http://localhost:5173,http://localhost:8000` |
 | `PORT`               | API port                            | `8000`                 |
+| `DOCKER_DATA_ROOT`   | Path used for the disk-usage gauge  | `/var/lib/docker`      |
 
 ---
 
