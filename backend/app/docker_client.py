@@ -18,7 +18,7 @@ class DockerClient:
     async def _get(self, path: str, params: dict | None = None, timeout: float = 5.0) -> httpx.Response:
         try:
             response = await self._client.get(path, params=params, timeout=timeout)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, OSError, AttributeError, RuntimeError) as exc:
             raise DockerUnavailableError(str(exc)) from exc
         if response.status_code >= 400:
             raise DockerUnavailableError(f"{path} returned HTTP {response.status_code}")
@@ -63,7 +63,7 @@ class DockerClient:
                     if not line:
                         continue
                     yield json.loads(line)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, OSError, AttributeError, RuntimeError) as exc:
             raise DockerUnavailableError(str(exc)) from exc
 
     async def aclose(self) -> None:
