@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     docker_sock: str = "/var/run/docker.sock"
     sample_interval_ms: int = 1500
     hostname_label: str = socket.gethostname()
-    allowed_origins: str = "http://localhost:5173,http://localhost:8000"
+    allowed_origins: str = "http://localhost:5173,http://localhost:8000,null"
     port: int = 8000
     docker_data_root: str = "/var/lib/docker"
 

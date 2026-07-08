@@ -61,14 +61,18 @@ class Component extends DCLogic {
   componentDidMount(){ this.connectLive(); this.scrollLogs(); }
   componentWillUnmount(){ clearInterval(this._t); }
   componentDidUpdate(prev){
-    if(prev.props.tickMs !== this.props.tickMs) this.startTimer();
+    if(prev.tickMs !== this.props.tickMs) this.startTimer();
     this.scrollLogs();
   }
   startTimer(){ clearInterval(this._t); this._t = setInterval(()=>this.tick(), this.props.tickMs || 1500); }
   scrollLogs(){ document.querySelectorAll('[data-logstream]').forEach(el=>{ el.scrollTop = el.scrollHeight; }); }
 
   connectLive(){
-    const wsUrl = this.props.wsUrl || `ws://${location.hostname}:8000/ws/snapshot`;
+    const apiHost = this.props.apiHost || location.hostname || '127.0.0.1';
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const httpProtocol = location.protocol === 'https:' ? 'https:' : 'http:';
+    const wsUrl = this.props.wsUrl || `${wsProtocol}//${apiHost}:8000/ws/snapshot`;
+    const snapshotUrl = this.props.snapshotUrl || `${httpProtocol}//${apiHost}:8000/api/snapshot`;
     let socket;
     let pollTimer = null;
 
@@ -76,7 +80,7 @@ class Component extends DCLogic {
       if (pollTimer) return;
       pollTimer = setInterval(async () => {
         try {
-          const res = await fetch(`http://${location.hostname}:8000/api/snapshot`);
+          const res = await fetch(snapshotUrl);
           if (res.ok) this.applySnapshot(await res.json());
         } catch (err) {
           // stay silent; next poll will retry
@@ -92,7 +96,12 @@ class Component extends DCLogic {
     };
 
     const connect = () => {
-      socket = new WebSocket(wsUrl);
+      try {
+        socket = new WebSocket(wsUrl);
+      } catch (err) {
+        startPolling();
+        return;
+      }
       socket.onopen = () => stopPolling();
       socket.onmessage = (event) => {
         this.applySnapshot(JSON.parse(event.data));

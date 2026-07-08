@@ -8,7 +8,7 @@ def test_defaults():
     assert s.docker_sock == "/var/run/docker.sock"
     assert s.sample_interval_ms == 1500
     assert s.hostname_label == socket.gethostname()
-    assert s.allowed_origins == "http://localhost:5173,http://localhost:8000"
+    assert s.allowed_origins == "http://localhost:5173,http://localhost:8000,null"
     assert s.port == 8000
     assert s.docker_data_root == "/var/lib/docker"
 

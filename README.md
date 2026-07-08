@@ -90,7 +90,7 @@ Alternatively, serve the folder statically.
 By default, the frontend connects to the backend WebSocket at:
 
 ```text
-ws://localhost:8000/ws/snapshot
+ws://127.0.0.1:8000/ws/snapshot
 ```
 
 ---
@@ -104,7 +104,7 @@ The backend can be configured with environment variables.
 | `DOCKER_SOCK`        | Docker socket path                  | `/var/run/docker.sock` |
 | `SAMPLE_INTERVAL_MS` | Collector sampling interval         | `1500`                 |
 | `HOSTNAME_LABEL`     | Label shown in the dashboard header | Machine hostname       |
-| `ALLOWED_ORIGINS`    | Comma-separated CORS origins        | `http://localhost:5173,http://localhost:8000` |
+| `ALLOWED_ORIGINS`    | Comma-separated CORS origins        | `http://localhost:5173,http://localhost:8000,null` |
 | `PORT`               | API port                            | `8000`                 |
 | `DOCKER_DATA_ROOT`   | Path used for the disk-usage gauge  | `/var/lib/docker`      |
 
@@ -186,9 +186,8 @@ More details are available in `BACKEND_PROMPT-dockerd.md`.
 
 ## Known Issues
 
-Pre-existing bugs in `Docker-Dashboard.html`, unrelated to the live backend wiring (not yet fixed):
+Pre-existing bug in `Docker-Dashboard.html`, unrelated to the live backend wiring (not yet fixed):
 
-* **`componentDidUpdate` prevProps typo** — reads `prev.props.tickMs` instead of `prev.tickMs` (the parameter itself is `prevProps`, not an object with a nested `.props`). Throws `TypeError: Cannot read properties of undefined (reading 'tickMs')` on every re-render (harmless to functionality, but spams the console).
 * **`spark()` divide-by-zero** — sparkline geometry divides by `arr.length-1`, which is `0` (→ `NaN`) when a container's history array has exactly one point. Happens briefly for newly-seen containers on their first tick; self-heals by the second tick.
 
 To fix: the file is a self-extracting "bundler" artifact — the real app code (`class Component extends DCLogic`) is JSON-encoded inside a `<script type="__bundler/template">` tag, in a nested `<script type="text/x-dc">` block (not visible to plain grep/line-based tools since the whole template is one JSON string on a single line). To edit it:
@@ -204,4 +203,3 @@ To fix: the file is a self-extracting "bundler" artifact — the real app code (
 ## License
 
 MIT
-
